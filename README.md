@@ -7,17 +7,19 @@ Keep your buffers across Neovim restarts — per working directory.
 - Automatically saves all open file buffers on exit
 - Restore all previously opened files with a single keypress
 - Focus remains on the file you launched Neovim with (e.g. `nvim myfile.txt`)
+- Uses hashed working directory path to avoid name collisions
 - Lightweight and dependency-free
 
 ## 📦 Installation (using [lazy.nvim](https://github.com/folke/lazy.nvim))
 
 ```lua
 {
-  "am2b/keep.nvim",
-  lazy = false,
-  config = function()
-    require("keep").setup()
-  end,
+    "am2b/keep.nvim",
+    lazy = false,
+
+    config = function()
+        require("keep").setup()
+    end,
 }
 ```
 
@@ -25,7 +27,8 @@ Keep your buffers across Neovim restarts — per working directory.
 
 ### Automatically saves buffers on exit
 
-Whenever you exit Neovim, `keep.nvim` will record the list of open file buffers in a per-directory file.
+Whenever you exit Neovim, `keep.nvim` will record the list of open file buffers in a session file, specific to your current working directory.
+The session file name is a SHA256 hash of your full working directory path, which ensures that similarly named folders (like `~/project/foo` and `~/work/foo`) don't conflict.
 
 ### Restore buffers manually
 
@@ -52,20 +55,13 @@ $ nvim README.md        # you’re editing README.md now
 # Press <space>ls       # main.py and utils.py will be restored silently, and the focus will STILL remain on README.md ✅
 ```
 
-## 🛠️ Configuration
+## 🛠️ How it works
 
-No extra config needed. By default:
-
-- Sessions are saved to: `~/.local/state/nvim/keep/<dirname>.txt`
-- Session is directory-specific (based on current working directory name)
+- Session files are saved to: `~/.local/state/nvim/keep/<hash>.txt`
+- The first line of each file contains the original working directory path (commented)
 - Only real files are tracked (no help buffers, terminals, etc.)
+- Buffer focus is preserved on restore
 
 ## 🧠 Why not use sessions or workspaces?
 
 This plugin is intentionally minimal and non-invasive. It doesn’t try to manage window layout, tab state, or LSP context — just your open files.
-
----
-
-## 📄 License
-
-MIT

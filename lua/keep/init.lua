@@ -2,27 +2,22 @@
 --最终这个M就是require("keep")得到的模块对象
 local M = {}
 
+local function get_state_dir()
+    --vim.fn.stdpath("state"):获取neovim的state目录,通常是~/.local/state/nvim(返回的是一个绝对路径)
+    local state_dir = vim.fn.stdpath("state") .. "/keep"
+    --创建目录,"p"表示递归创建
+    vim.fn.mkdir(state_dir, "p")
+
+    return state_dir
+end
+
 local function get_session_file()
     --获取当前工作目录(cwd),这是一个绝对路径(neovim启动的路径)
     local cwd = vim.loop.cwd()
-    --获取neovim的state目录,通常是~/.local/state/nvim
-    --vim.fn.stdpath("state"):返回的是一个绝对路径
-    local session_dir = vim.fn.stdpath("state") .. "/keep"
-    --创建目录,"p"表示递归创建
-    vim.fn.mkdir(session_dir, "p")
-    --提取工作目录的绝对路径的最后一部分(启动neovim的那个文件夹的名字)来作为会话文件名
-    --cwd:是当前工作目录的绝对路径
-    --:p(path):将路径转换为绝对路径,虽然cwd本身已经是绝对路径,但这个修饰符确保了这一点
-    --:h(head):获取路径的目录部分
-    --例如:
-    --如果cwd是/home/user/my_project,则:h的结果仍然是/home/user/my_project(因为它是目录本身,没有文件名部分)
-    --如果cwd是/home/user/my_project/file.txt,则:h的结果是/home/user/my_project
-    --:t(tail):获取路径的最后一部分(文件名或目录名)
-    --例如:
-    --如果cwd是/home/user/my_project,则:t的结果是my_project
-    local session_name = vim.fn.fnamemodify(cwd, ":p:h:t")
-    --返回存储会话的文件的绝对路径
-    return session_dir .. "/" .. session_name .. ".txt"
+    local hash = vim.fn.sha256(cwd)
+    local state_dir = get_state_dir()
+
+    return state_dir .. "/" .. hash .. ".txt"
 end
 
 function M.save_session()
@@ -56,6 +51,10 @@ function M.save_session()
     local session_file = get_session_file()
     local f = io.open(session_file, "w")
     if f then
+        --写入第一行为工作目录路径
+        local cwd = vim.loop.cwd()
+        f:write("# " .. cwd .. "\n")
+
         for _, file in ipairs(files) do
             f:write(file .. "\n")
         end
@@ -74,7 +73,9 @@ function M.load_session()
     --收集buffer(文件)的路径
     local files = {}
     for line in f:lines() do
-        table.insert(files, line)
+        if not line:match("^#") then
+            table.insert(files, line)
+        end
     end
     f:close()
 
@@ -83,6 +84,8 @@ function M.load_session()
     --vim.api.nvim_buf_get_name(0):在没有打开文件时会返回空字符串(比如在命令行nvim,这样仅打开了nvim,但是没有打开任何文件)
     --这个路径通常也是绝对路径,我们获取它的目的是为了避免重复打开当前已经打开的文件
     local current = vim.api.nvim_buf_get_name(0)
+    --获取buffer ID
+    local target_buf_id = vim.fn.bufnr(current)
 
     --打开所有buffer(排除当前)
     for _, file in ipairs(files) do
@@ -103,9 +106,11 @@ function M.load_session()
         --如果加载会话后,当前焦点不在原始的启动文件上,则切换回去
         if current ~= current_after_load then
             --检查要切换过去的buffer所对应的文件是否仍然存在且可读,以提高健壮性
-            if vim.fn.filereadable(current) == 1 then
-                vim.cmd("buffer " .. vim.fn.fnameescape(current))
-                vim.notify("Set focus back to: " .. current, vim.log.levels.INFO)
+            --确保buf_id是一个有效的缓冲区编号(>=0)
+            if vim.fn.filereadable(current) == 1 and target_buf_id >= 0 and vim.api.nvim_buf_is_valid(target_buf_id) then
+                    --vim.cmd("buffer " .. vim.fn.fnameescape(current))
+                    vim.api.nvim_set_current_buf(target_buf_id)
+                    vim.notify("Set focus back to: " .. current, vim.log.levels.INFO)
             else
                 vim.notify("Could not set focus back to file: " .. current .. " (file not readable).",
                     vim.log.levels.WARN)
