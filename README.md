@@ -1,6 +1,6 @@
 # keep.nvim
 
-Keep your buffers across Neovim restarts — per working directory.
+Simple Neovim session manager that helps you keep track of your opened files per project. Automatically saves on exit and loads on demand.
 
 ## ✨ Features
 
@@ -15,7 +15,14 @@ Keep your buffers across Neovim restarts — per working directory.
 ```lua
 {
     "am2b/keep.nvim",
-    lazy = false,
+    lazy = true,
+
+    -- You can change the default key bindings here
+    -- This will override the plugin's internal default mapping
+    keys = {
+        { "<space>ls", "<cmd>lua require('keep').load_session()<cr>", desc = "Restore session" }
+    },
+    event = "VimLeavePre",
 
     config = function()
         require("keep").setup()
