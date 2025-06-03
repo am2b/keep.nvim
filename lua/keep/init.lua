@@ -29,22 +29,26 @@ function M.save_session()
     --buf:缓冲区ID
     for _, buf in ipairs(bufs) do
         --vim.api.nvim_buf_is_loaded():检查给定ID的缓冲区是否已经被加载到内存中(当前正在编辑或查看的文件)
-        if vim.api.nvim_buf_is_loaded(buf)
-            --vim.api.nvim_buf_get_option(buf,"buftype"):获取给定缓冲区的buftype选项的值
-            --常见的buftype值包括:
-            --""(空字符串):普通文件缓冲区(通常编辑的实际文件)
-            --nofile:没有关联文件的缓冲区,通常用于scratchpad或临时文本
-            --nowrite:缓冲区不能被写入,通常用于帮助文件或只读文件
-            --quickfix:快速修复列表
-            --prompt:提示缓冲区
-            --terminal:终端缓冲区
-            --== "":这个条件表示我们只对普通文件缓冲区感兴趣,排除掉那些特殊用途的缓冲区
-            and vim.api.nvim_buf_get_option(buf, "buftype") == ""
-            --vim.api.nvim_buf_get_name(buf):获取给定缓冲区的名称(即它所关联的文件路径)
-            --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
-            and vim.api.nvim_buf_get_name(buf) ~= "" then
-            --files:通常存储的是文件的绝对路径
-            table.insert(files, vim.api.nvim_buf_get_name(buf))
+        local is_loaded = vim.api.nvim_buf_is_loaded(buf)
+        --vim.api.nvim_buf_get_option(buf,"buftype"):获取给定缓冲区的buftype选项的值
+        --常见的buftype值包括:
+        --""(空字符串):普通文件缓冲区(通常编辑的实际文件)
+        --nofile:没有关联文件的缓冲区,通常用于scratchpad或临时文本
+        --nowrite:缓冲区不能被写入,通常用于帮助文件或只读文件
+        --quickfix:快速修复列表
+        --prompt:提示缓冲区
+        --terminal:终端缓冲区
+        --== "":这个条件表示我们只对普通文件缓冲区感兴趣,排除掉那些特殊用途的缓冲区
+        local buftype = vim.api.nvim_buf_get_option(buf, "buftype")
+        --vim.api.nvim_buf_get_name(buf):获取给定缓冲区的名称(即它所关联的文件路径)
+        --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
+        local name = vim.api.nvim_buf_get_name(buf)
+
+        if is_loaded and buftype == "" and name ~= "" then
+            if not (name:match("/%.git/") or name:match("/%.git$")) then
+                --files:通常存储的是文件的绝对路径
+                table.insert(files, name)
+            end
         end
     end
 
@@ -108,9 +112,9 @@ function M.load_session()
             --检查要切换过去的buffer所对应的文件是否仍然存在且可读,以提高健壮性
             --确保buf_id是一个有效的缓冲区编号(>=0)
             if vim.fn.filereadable(current) == 1 and target_buf_id >= 0 and vim.api.nvim_buf_is_valid(target_buf_id) then
-                    --vim.cmd("buffer " .. vim.fn.fnameescape(current))
-                    vim.api.nvim_set_current_buf(target_buf_id)
-                    vim.notify("Set focus back to: " .. current, vim.log.levels.INFO)
+                --vim.cmd("buffer " .. vim.fn.fnameescape(current))
+                vim.api.nvim_set_current_buf(target_buf_id)
+                vim.notify("Set focus back to: " .. current, vim.log.levels.INFO)
             else
                 vim.notify("Could not set focus back to file: " .. current .. " (file not readable).",
                     vim.log.levels.WARN)

@@ -28,6 +28,7 @@ Keep your buffers across Neovim restarts — per working directory.
 ### Automatically saves buffers on exit
 
 Whenever you exit Neovim, `keep.nvim` will record the list of open file buffers in a session file, specific to your current working directory.
+
 The session file name is a SHA256 hash of your full working directory path, which ensures that similarly named folders (like `~/project/foo` and `~/work/foo`) don't conflict.
 
 ### Restore buffers manually
