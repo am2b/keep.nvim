@@ -2,27 +2,44 @@
 --最终这个M就是require("keep")得到的模块对象
 local M = {}
 
+--@brief:将路径分隔符统一为正斜杠'/',这是为了在进行字符串匹配时,确保无论在哪个操作系统上,匹配模式都能正确工作
+--@param path string | nil:需要标准化的路径字符串
+--@return string:标准化后的路径字符串,如果输入为nil则返回空字符串
+local function normalize_path_separators(path)
+    if path then
+        --将所有反斜杠替换为正斜杠
+        return path:gsub("\\", "/")
+    end
+
+    return ""
+end
+
+--@brief:获取neovim的state目录下的keep文件夹路径
+--@return string:keep文件夹的绝对路径
 local function get_state_dir()
     --vim.fn.stdpath("state"):获取neovim的state目录,通常是~/.local/state/nvim(返回的是一个绝对路径)
-    local state_dir = vim.fn.stdpath("state") .. "/keep"
+    --vim.fs.joinpath:确保跨平台路径分隔符正确
+    local state_dir = vim.fs.joinpath(vim.fn.stdpath("state"), "keep")
     --创建目录,"p"表示递归创建
     vim.fn.mkdir(state_dir, "p")
 
     return state_dir
 end
 
+--@brief:根据当前工作目录获取会话文件路径
+--@return string:会话文件的绝对路径
 local function get_session_file()
     --获取当前工作目录(cwd),这是一个绝对路径(neovim启动的路径)
     local cwd = vim.loop.cwd()
     local hash = vim.fn.sha256(cwd)
     local state_dir = get_state_dir()
 
-    return state_dir .. "/" .. hash .. ".txt"
+    return vim.fs.joinpath(state_dir, hash .. ".txt")
 end
 
+--@brief:保存当前neovim会话中所有打开的有效文件
 function M.save_session()
     --获取所有buffer的ID列表(数字数组)
-    --每个缓冲区ID代表一个打开的文件,一个帮助文档,一个快速列表等
     local bufs = vim.api.nvim_list_bufs()
     local files = {}
 
@@ -44,21 +61,27 @@ function M.save_session()
         --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
         local name = vim.api.nvim_buf_get_name(buf)
 
+        --筛选条件:已加载,普通文件类型,有文件路径
         if is_loaded and buftype == "" and name ~= "" then
-            if not (name:match("/%.git/") or name:match("/%.git$")) then
-                --files:通常存储的是文件的绝对路径
+            --为了跨平台兼容性,在进行字符串匹配前,将路径分隔符统一为'/'
+            local normalized_name = normalize_path_separators(name)
+            --排除.git目录下的文件
+            if not (normalized_name:match("/%.git/") or normalized_name:match("/%.git$")) then
+                --files中存储的是文件的绝对路径
                 table.insert(files, name)
             end
         end
     end
 
     local session_file = get_session_file()
+    --"w"表示文本写入模式,lua会自动处理\n和\r\n之间的转换
     local f = io.open(session_file, "w")
     if f then
         --写入第一行为工作目录路径
         local cwd = vim.loop.cwd()
         f:write("# " .. cwd .. "\n")
 
+        --逐行写入文件路径
         for _, file in ipairs(files) do
             f:write(file .. "\n")
         end
@@ -66,6 +89,7 @@ function M.save_session()
     end
 end
 
+--@brief:从会话文件中加载并恢复上次打开的文件
 function M.load_session()
     local session_file = get_session_file()
     local f = io.open(session_file, "r")
@@ -74,50 +98,60 @@ function M.load_session()
         return
     end
 
-    --收集buffer(文件)的路径
+    --获取加载会话前,当前buffer的文件路径
+    --vim.api.nvim_buf_get_name(0):在没有打开文件时会返回空字符串
+    local current_original_path = vim.api.nvim_buf_get_name(0)
+    local normalized_current_original_path = normalize_path_separators(current_original_path)
+
+    --收集会话文件中保存的文件路径
     local files = {}
     for line in f:lines() do
+        --忽略以#开头的注释行(即第一行写入的cwd信息)
         if not line:match("^#") then
             table.insert(files, line)
         end
     end
     f:close()
 
-    --当前buffer的文件路径
-    --vim.api.nvim_buf_get_name(0):获取当前缓冲区(0代表当前缓冲区)的文件路径
-    --vim.api.nvim_buf_get_name(0):在没有打开文件时会返回空字符串(比如在命令行nvim,这样仅打开了nvim,但是没有打开任何文件)
-    --这个路径通常也是绝对路径,我们获取它的目的是为了避免重复打开当前已经打开的文件
-    local current = vim.api.nvim_buf_get_name(0)
-    --获取buffer ID
-    local target_buf_id = vim.fn.bufnr(current)
-
-    --打开所有buffer(排除当前)
     for _, file in ipairs(files) do
-        --file ~= current:确保要打开的文件不是当前已经打开的缓冲区,避免不必要的重新加载
+        --标准化以避免因分隔符差异导致误判
+        local normalized_file = normalize_path_separators(file)
+
+        --确保要打开的文件不是当前已经打开的缓冲区,并且文件实际可读
         --vim.fn.filereadable(file) == 1:检查给定路径的文件是否可读(避免尝试打开一个已经不存在或没有权限访问的文件),1:表示可读,0:表示不可读
-        if file ~= current and vim.fn.filereadable(file) == 1 then
-            --vim.cmd():用于执行命令字符串
-            --edit:是neovim中用于打开(或切换到)某个文件的命令
+        if normalized_file ~= normalized_current_original_path and vim.fn.filereadable(file) == 1 then
             --vim.fn.fnameescape(file):用于转义文件路径中的特殊字符(如空格,%,#等),使其能够安全地作为neovim命令的参数,如果没有这个转义,包含特殊字符的文件路径可能会导致命令解析错误
             vim.cmd("edit " .. vim.fn.fnameescape(file))
         end
     end
 
-    --如果是通过nvim file.txt这样的形式打开的neovim
-    if current ~= "" then
-        --再次获取当前buffer的文件路径
+    --如果neovim是通过指定文件启动的(例如nvim file.txt),在加载会话后焦点可能切换到了其他文件,则切换回原始文件
+    if current_original_path ~= "" then
+        --再次获取当前活跃buffer的文件路径,以检查加载会话后焦点是否变化
         local current_after_load = vim.api.nvim_buf_get_name(0)
-        --如果加载会话后,当前焦点不在原始的启动文件上,则切换回去
-        if current ~= current_after_load then
-            --检查要切换过去的buffer所对应的文件是否仍然存在且可读,以提高健壮性
-            --确保buf_id是一个有效的缓冲区编号(>=0)
-            if vim.fn.filereadable(current) == 1 and target_buf_id >= 0 and vim.api.nvim_buf_is_valid(target_buf_id) then
-                --vim.cmd("buffer " .. vim.fn.fnameescape(current))
+        --比较路径时进行标准化
+        local normalized_current_after_load = normalize_path_separators(current_after_load)
+        local normalized_current_original_path_again = normalize_path_separators(current_original_path)
+
+        --如果当前焦点不在原始启动文件上,则切换回去
+        if normalized_current_original_path_again ~= normalized_current_after_load then
+            --获取原始文件的缓冲区ID
+            local target_buf_id = vim.fn.bufnr(current_original_path)
+
+            --检查目标文件是否仍然存在且可读,并且缓冲区ID有效
+            if vim.fn.filereadable(current_original_path) == 1
+                and target_buf_id >= 0
+                and vim.api.nvim_buf_is_valid(target_buf_id) then
+                --vim.api.nvim_set_current_buf:直接切换缓冲区
                 vim.api.nvim_set_current_buf(target_buf_id)
-                vim.notify("Set focus back to: " .. current, vim.log.levels.INFO)
+                vim.notify("Set focus back to: " .. current_original_path, vim.log.levels.INFO)
             else
-                vim.notify("Could not set focus back to file: " .. current .. " (file not readable).",
-                    vim.log.levels.WARN)
+                vim.notify(
+                    "Could not set focus back to file: "
+                    .. current_original_path
+                    .. " (file not readable or buffer invalid).",
+                    vim.log.levels.WARN
+                )
             end
         end
     end
@@ -125,12 +159,14 @@ function M.load_session()
     --vim.notify("Session restored (" .. #files .. " files).", vim.log.levels.INFO)
 end
 
+--@brief:插件设置函数,用于创建自动命令和键位映射
 function M.setup()
-    --VimLeavePre:在退出neovim之前触发save_session()
+    --创建自动命令:在退出neovim之前(VimLeavePre事件)触发save_session()
     vim.api.nvim_create_autocmd("VimLeavePre", {
         callback = M.save_session,
     })
 
+    --设置键位映射:在普通模式下按下<space>ls恢复会话
     vim.keymap.set("n", "<space>ls", M.load_session, { desc = "Restore session" })
 end
 
