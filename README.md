@@ -69,7 +69,3 @@ $ nvim README.md        # you’re editing README.md now
 - The first line of each file contains the original working directory path (commented)
 - Only real files are tracked (no help buffers, terminals, etc.)
 - Buffer focus is preserved on restore
-
-## 🧠 Why not use sessions or workspaces?
-
-This plugin is intentionally minimal and non-invasive. It doesn’t try to manage window layout, tab state, or LSP context — just your open files.
