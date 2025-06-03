@@ -1,6 +1,8 @@
 # keep.nvim
 
-Simple Neovim session manager that helps you keep track of your opened files per project. Automatically saves on exit and loads on demand.
+Simple Neovim session manager that helps you keep track of your opened files per project.
+
+Automatically saves on exit and loads on demand.
 
 ## ✨ Features
 
