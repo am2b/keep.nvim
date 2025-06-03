@@ -17,14 +17,13 @@ Automatically saves on exit and loads on demand.
 ```lua
 {
     "am2b/keep.nvim",
-    lazy = true,
+    event = { 'VeryLazy' },
 
     -- You can change the default key bindings here
     -- This will override the plugin's internal default mapping
     keys = {
         { "<space>ls", "<cmd>lua require('keep').load_session()<cr>", desc = "Restore session" }
     },
-    event = "VimLeavePre",
 
     config = function()
         require("keep").setup()
