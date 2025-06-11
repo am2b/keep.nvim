@@ -113,6 +113,9 @@ function M.load_session()
     end
     f:close()
 
+    --打印记录的数量
+    vim.notify("Session contains " .. #files .. " records.", vim.log.levels.INFO)
+
     for _, file in ipairs(files) do
         --标准化以避免因分隔符差异导致误判
         local normalized_file = normalize_path_separators(file)
