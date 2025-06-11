@@ -39,6 +39,13 @@ end
 
 --@brief:保存当前neovim会话中所有打开的有效文件
 function M.save_session()
+    --当前活跃的缓冲区,如果是git相关的,那么就不保存
+    local current_buf_name = vim.api.nvim_buf_get_name(0)
+    local normalized_current_buf_name = normalize_path_separators(current_buf_name)
+    if normalized_current_buf_name:match("/%.git/") or normalized_current_buf_name:match("/%.git$") then
+        return
+    end
+
     --获取所有buffer的ID列表(数字数组)
     local bufs = vim.api.nvim_list_bufs()
     local files = {}
@@ -47,6 +54,7 @@ function M.save_session()
     for _, buf in ipairs(bufs) do
         --vim.api.nvim_buf_is_loaded():检查给定ID的缓冲区是否已经被加载到内存中(当前正在编辑或查看的文件)
         local is_loaded = vim.api.nvim_buf_is_loaded(buf)
+
         --vim.api.nvim_buf_get_option(buf,"buftype"):获取给定缓冲区的buftype选项的值
         --常见的buftype值包括:
         --""(空字符串):普通文件缓冲区(通常编辑的实际文件)
@@ -57,19 +65,15 @@ function M.save_session()
         --terminal:终端缓冲区
         --== "":这个条件表示我们只对普通文件缓冲区感兴趣,排除掉那些特殊用途的缓冲区
         local buftype = vim.api.nvim_buf_get_option(buf, "buftype")
+
         --vim.api.nvim_buf_get_name(buf):获取给定缓冲区的名称(即它所关联的文件路径)
         --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
         local name = vim.api.nvim_buf_get_name(buf)
 
         --筛选条件:已加载,普通文件类型,有文件路径
         if is_loaded and buftype == "" and name ~= "" then
-            --为了跨平台兼容性,在进行字符串匹配前,将路径分隔符统一为'/'
-            local normalized_name = normalize_path_separators(name)
-            --排除.git目录下的文件
-            if not (normalized_name:match("/%.git/") or normalized_name:match("/%.git$")) then
-                --files中存储的是文件的绝对路径
-                table.insert(files, name)
-            end
+            --files中存储的是文件的绝对路径
+            table.insert(files, name)
         end
     end
 
