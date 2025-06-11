@@ -26,7 +26,14 @@ Automatically saves on exit and loads on demand.
     },
 
     config = function()
-        require("keep").setup()
+        local user_opts = {
+            ignore_dirs = {
+                "%.git/",
+                "%.venv/",
+            }
+        }
+
+        require("keep").setup(user_opts)
     end,
 }
 ```

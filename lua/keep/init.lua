@@ -2,6 +2,14 @@
 --最终这个M就是require("keep")得到的模块对象
 local M = {}
 
+local default_config = {
+    ignore_dirs = {
+        "%.git/",
+    }
+}
+
+local final_config = {}
+
 --@brief:将路径分隔符统一为正斜杠'/',这是为了在进行字符串匹配时,确保无论在哪个操作系统上,匹配模式都能正确工作
 --@param path string | nil:需要标准化的路径字符串
 --@return string:标准化后的路径字符串,如果输入为nil则返回空字符串
@@ -42,8 +50,10 @@ function M.save_session()
     --当前活跃的缓冲区,如果是git相关的,那么就不保存
     local current_buf_name = vim.api.nvim_buf_get_name(0)
     local normalized_current_buf_name = normalize_path_separators(current_buf_name)
-    if normalized_current_buf_name:match("/%.git/") or normalized_current_buf_name:match("/%.git$") then
-        return
+    for _, dir in ipairs(final_config.ignore_dirs) do
+        if normalized_current_buf_name:match(dir) then
+            return
+        end
     end
 
     --获取所有buffer的ID列表(数字数组)
@@ -167,7 +177,12 @@ function M.load_session()
 end
 
 --@brief:插件设置函数,用于创建自动命令和键位映射
-function M.setup()
+function M.setup(user_opts)
+    --合并用户配置与默认配置
+    --force:当键冲突时,使用后面的表值覆盖前面的,如果后面的表是空的,就没有冲突,则什么都不覆盖
+    --user_opts or {}:如果用户没有传任何参数(即nil),就用空表{}避免报错
+    final_config = vim.tbl_deep_extend("force", default_config, user_opts or {})
+
     --创建自动命令:在退出neovim之前(VimLeavePre事件)触发save_session()
     vim.api.nvim_create_autocmd("VimLeavePre", {
         callback = M.save_session,
