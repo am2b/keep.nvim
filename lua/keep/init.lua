@@ -47,21 +47,32 @@ end
 
 --@brief:保存当前neovim会话中所有打开的有效文件
 function M.save_session()
-    --当前活跃的缓冲区,如果是git相关的,那么就不保存
-    local current_buf_name = vim.api.nvim_buf_get_name(0)
-    local normalized_current_buf_name = normalize_path_separators(current_buf_name)
+    --如果是站在.git/里面打开的neovim,那么不保存
+    local cwd = vim.loop.cwd()
+    local normalized_cwd = normalize_path_separators(cwd)
     for _, dir in ipairs(final_config.ignore_dirs) do
-        if normalized_current_buf_name:match(dir) then
-            return
-        end
+        if normalized_cwd:mathch(dir) then return end
     end
 
-    --获取所有buffer的ID列表(数字数组)
+    --如果是站在.git/外面打开的neovim
+    --把非.git/里面的buffer标记出来
+    --vim.api.nvim_list_bufs():返回的是buf的ID
     local bufs = vim.api.nvim_list_bufs()
-    local files = {}
-
-    --buf:缓冲区ID
+    local bufs_pool_a = {}
     for _, buf in ipairs(bufs) do
+        local buf_name = vim.api.nvim_buf_get_name(buf)
+        local normalized_buf_name = normalize_path_separators(buf_name)
+        for _, dir in ipairs(final_config.ignore_dirs) do
+            if not normalized_buf_name:match(dir) then
+                table.insert(bufs_pool_a, buf_name)
+            end
+        end
+    end
+    --如果非.git/里面的buffer数量为0,则不保存
+    if #bufs_pool_a == 0 then return end
+
+    local bufs_pool_b = {}
+    for _, buf in ipairs(bufs_pool_a) do
         --vim.api.nvim_buf_is_loaded():检查给定ID的缓冲区是否已经被加载到内存中(当前正在编辑或查看的文件)
         local is_loaded = vim.api.nvim_buf_is_loaded(buf)
 
@@ -83,20 +94,23 @@ function M.save_session()
         --筛选条件:已加载,普通文件类型,有文件路径
         if is_loaded and buftype == "" and name ~= "" then
             --files中存储的是文件的绝对路径
-            table.insert(files, name)
+            table.insert(bufs_pool_b, name)
         end
     end
+    --如果这一轮筛选后,池子里面的buf数量为0,则直接返回
+    if #bufs_pool_b == 0 then return end
 
+    --走到这里,就需要真正的写入session记录文件了
     local session_file = get_session_file()
     --"w"表示文本写入模式,lua会自动处理\n和\r\n之间的转换
     local f = io.open(session_file, "w")
     if f then
         --写入第一行为工作目录路径
-        local cwd = vim.loop.cwd()
+        cwd = vim.loop.cwd()
         f:write("# " .. cwd .. "\n")
 
         --逐行写入文件路径
-        for _, file in ipairs(files) do
+        for _, file in ipairs(bufs_pool_b) do
             f:write(file .. "\n")
         end
         f:close()
