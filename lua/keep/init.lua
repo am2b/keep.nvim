@@ -1,6 +1,8 @@
---定义模块
 --最终这个M就是require("keep")得到的模块对象
 local M = {}
+
+local log = require("keep/log")
+log.debug("--------------------")
 
 local default_config = {
     ignore_dirs = {
@@ -9,6 +11,14 @@ local default_config = {
 }
 
 local final_config = {}
+
+local function get_table_size(t)
+    local count = 0
+    for _ in pairs(t) do
+        count = count + 1
+    end
+    return count
+end
 
 --@brief:将路径分隔符统一为正斜杠'/',这是为了在进行字符串匹配时,确保无论在哪个操作系统上,匹配模式都能正确工作
 --@param path string | nil:需要标准化的路径字符串
@@ -47,32 +57,46 @@ end
 
 --@brief:保存当前neovim会话中所有打开的有效文件
 function M.save_session()
+    log.debug("start save_session():")
+
     --如果是站在.git/里面打开的neovim,那么不保存
     local cwd = vim.loop.cwd()
     local normalized_cwd = normalize_path_separators(cwd)
     for _, dir in ipairs(final_config.ignore_dirs) do
-        if normalized_cwd:mathch(dir) then return end
+        if normalized_cwd:match(dir) then
+            return
+        end
     end
 
     --如果是站在.git/外面打开的neovim
     --把非.git/里面的buffer标记出来
     --vim.api.nvim_list_bufs():返回的是buf的ID
     local bufs = vim.api.nvim_list_bufs()
+    log.debug("list bufs:")
+    log.debug(vim.inspect(bufs))
     local bufs_pool_a = {}
     for _, buf in ipairs(bufs) do
+        local flag_add_to_pool = true
         local buf_name = vim.api.nvim_buf_get_name(buf)
         local normalized_buf_name = normalize_path_separators(buf_name)
         for _, dir in ipairs(final_config.ignore_dirs) do
-            if not normalized_buf_name:match(dir) then
-                table.insert(bufs_pool_a, buf_name)
+            if normalized_buf_name:match(dir) then
+                flag_add_to_pool = false
             end
         end
+        if flag_add_to_pool then
+            bufs_pool_a[tostring(buf)] = buf_name
+        end
     end
+    log.debug("bufs_pool_a:")
+    log.debug(vim.inspect(bufs_pool_a))
     --如果非.git/里面的buffer数量为0,则不保存
-    if #bufs_pool_a == 0 then return end
+    if get_table_size(bufs_pool_a) == 0 then return end
 
     local bufs_pool_b = {}
-    for _, buf in ipairs(bufs_pool_a) do
+    log.debug("bufs_pool_b")
+    for buf, name in pairs(bufs_pool_a) do
+        buf = tonumber(buf)
         --vim.api.nvim_buf_is_loaded():检查给定ID的缓冲区是否已经被加载到内存中(当前正在编辑或查看的文件)
         local is_loaded = vim.api.nvim_buf_is_loaded(buf)
 
@@ -87,21 +111,20 @@ function M.save_session()
         --== "":这个条件表示我们只对普通文件缓冲区感兴趣,排除掉那些特殊用途的缓冲区
         local buftype = vim.api.nvim_buf_get_option(buf, "buftype")
 
-        --vim.api.nvim_buf_get_name(buf):获取给定缓冲区的名称(即它所关联的文件路径)
-        --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
-        local name = vim.api.nvim_buf_get_name(buf)
-
         --筛选条件:已加载,普通文件类型,有文件路径
+        --有文件路径的才保存(排除掉一些没有明确文件路径的临时缓冲区)
         if is_loaded and buftype == "" and name ~= "" then
             --files中存储的是文件的绝对路径
             table.insert(bufs_pool_b, name)
         end
     end
+    log.debug(vim.inspect(bufs_pool_b))
     --如果这一轮筛选后,池子里面的buf数量为0,则直接返回
     if #bufs_pool_b == 0 then return end
 
     --走到这里,就需要真正的写入session记录文件了
     local session_file = get_session_file()
+    log.debug("write to session file:" .. session_file)
     --"w"表示文本写入模式,lua会自动处理\n和\r\n之间的转换
     local f = io.open(session_file, "w")
     if f then
